@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Mecha Chameleon Online</title>
+    <!-- Librería oficial de Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+        body {
+            margin: 0;
+            background-color: #141419;
+            color: white;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+            touch-action: none;
+        }
+        h1 { margin: 5px; color: #00ffcc; text-shadow: 0 0 10px rgba(0,255,204,0.5); font-size: 24px; }
+        
+        #setup, #lobby, #game-container {
+            background: #1f1f2e;
+            padding: 20px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            text-align: center;
+            width: 90%;
+            max-width: 450px;
+            border: 1px solid #33334d;
+        }
+        #lobby, #game-container { display: none; }
+        #game-container { max-width: 850px; width: 95%; padding: 10px; }
+
+        input {
+            background: #2d2d44;
+            color: white;
+            border: 1px solid #444466;
+            padding: 10px;
+            border-radius: 8px;
+            width: 100%;
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #00ffcc, #00b38f);
+            color: #111;
+            border: none;
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.2s;
+            box-shadow: 0 4px 15px rgba(0,255,204,0.2);
+        }
+        button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,255,204,0.4); }
+        button.secondary { background: #3d3d5c; color: white; margin-top: 10px; box-shadow: none; }
+
+        .flex-row { display: flex; gap: 10px; }
+        
+        canvas {
+            border: 3px solid #3d3d5c;
+            background-color: #fff;
+            display: block;
+            border-radius: 8px;
+            width: 100%;
+            height: auto;
+            max-height: 50vh;
+        }
+
+        #hud {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            margin-bottom: 8px;
+            font-weight: bold;
+            background: #2a2a40;
+            padding: 8px 15px;
+            border-radius: 8px;
+        }
+
+        /* Controles Táctiles en Pantalla */
+        #touch-controls {
+            display: none;
+            width: 100%;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
+            padding: 0 10px;
+        }
+        .joystick-area {
+            width: 110px;
+            height: 110px;
+            background: rgba(255,255,255,0.05);
+            border: 2px dashed rgba(255,255,255,0.2);
+            border-radius: 50%;
+            position: relative;
+        }
+        .joystick-stick {
+            width: 45px;
+            height: 45px;
+            background: linear-gradient(135deg, #a0a0a0, #505050);
+            border-radius: 50%;
+            position: absolute;
+            left: 32px;
+            top: 32px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .touch-btn {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            border: none;
+            font-weight: bold;
+            font-size: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #111;
+        }
+        #btn-action { background: #00ffcc; }
+        #btn-camo { background: #ff00ff; color: white; }
+        .status-text { color: #aaa; font-size: 13px; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <h1>MECHA CHAMELEON ONLINE</h1>
+
+    <!-- 1. Pantalla de Conectividad / Credenciales -->
+    <div id="setup">
+        <h3>Paso 1: Conectar Supabase</h3>
+        <p class="status-text" style="margin-bottom: 15px;">Ingresa las credenciales de tu proyecto de Supabase. Si las dejas vacías, jugarás en <b>Modo Demo (Bots locales)</b>.</p>
+        <input type="text" id="sb-url" placeholder="Supabase Project URL (https://...)">
+        <input type="text" id="sb-key" placeholder="Supabase Anon API Key">
+        <hr style="border-color: #333; margin: 15px 0;">
+        <h3>Paso 2: Tu Perfil</h3>
+        <input type="text" id="username" placeholder="Tu Nombre de Jugador" value="Jugador_1">
+        <button onclick="connectSupabase()">Entrar a la Sala</button>
+    </div>
+
+    <!-- 2. Lobby de Espera -->
+    <div id="lobby">
+        <h3>Sala de Espera</h3>
+        <div id="room-id-display" style="font-weight: bold; color: #00ffcc; font-size: 18px; margin-bottom: 15px;">Código: ---</div>
+        <p>Jugadores en esta sala:</p>
+        <div id="player-list" style="background: #141419; padding: 10px; border-radius: 8px; text-align: left; margin-bottom: 15px; min-height: 60px;"></div>
+        
+        <div class="flex-row">
+            <button onclick="startOnlineGame()">Comenzar Partida</button>
+            <button class="secondary" onclick="addBotToLobby()">+ Añadir Bot</button>
+        </div>
+    </div>
+
+    <!-- 3. Pantalla del Juego -->
+    <div id="game-container">
+        <div id="hud">
+            <span id="time-display">Tiempo: --</span>
+            <span id="role-display">Rol: --</span>
+            <span id="score-display">Vivos: --</span>
+        </div>
+        <canvas id="gameCanvas" width="800" height="450"></canvas>
+        
+        <!-- Controles para Pantalla Táctil -->
+        <div id="touch-controls">
+            <div class="joystick-area" id="joyArea">
+                <div class="joystick-stick" id="joyStick"></div>
+            </div>
+            <div class="action-buttons">
+                <button class="touch-btn" id="btn-action">ATRAPAR</button>
+                <button class="touch-btn" id="btn-camo">CAMBIO</button>
+            </div>
+        </div>
+
+        <button class="secondary" onclick="leaveGame()" style="width: auto; margin-top: 15px; padding: 6px 15px; font-size: 14px;">Salir al Menú</button>
+    </div>
+
+    <script>
+        let supabase = null;
+        let roomCode = "SALA-" + Math.floor(1000 + Math.random() * 9000);
+        let myId = "usr_" + Math.floor(Math.random() * 100000);
+        let myName = "Jugador";
+        let isHost = false;
+        
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const zones = [
+            { x: 0, width: 266, color: '#e056fd' }, 
+            { x: 266, width: 268, color: '#30336b' }, 
+            { x: 534, width: 266, color: '#22a6b3' }  
+        ];
+        const textures = ['#e056fd', '#30336b', '#22a6b3'];
+
+        let gameState = { players: {}, timeLeft: 60, active: false };
+        let myLocalData = { x: 100, y: 200, textureIndex: 0, isSeeker: false, alive: true };
+        let inputVector = { x: 0, y: 0 };
+        let gameInterval, syncInterval;
+
+        if(localStorage.getItem('sb_url')) document.getElementById('sb-url').value = localStorage.getItem('sb_url');
+        if(localStorage.getItem('sb_key')) document.getElementById('sb-key').value = localStorage.getItem('sb_key');
+
+        function connectSupabase() {
+            const url = document.getElementById('sb-url').value.trim();
+            const key = document.getElementById('sb-key').value.trim();
+            myName = document.getElementById('username').value.trim() || "Jugador";
+
+            // CORRECCIÓN: Si falta uno de los dos datos, salta al modo simulación inmediatamente sin usar la librería de Supabase
+            if(!url || !key) {
+                initSimulationMode();
+                return;
+            }
+
+            try {
+                localStorage.setItem('sb_url', url);
+                localStorage.setItem('sb_key', key);
+                // Inicialización segura de Supabase
+                supabase = window.supabase.createClient(url, key);
+                setupRealtimeLobby();
+            } catch(e) {
+                console.error(e);
+                initSimulationMode();
+            }
+        }
+
+        function initSimulationMode() {
+            isHost = true;
+            document.getElementById('setup').style.display = 'none';
+            document.getElementById('lobby').style.display = 'block';
+            document.getElementById('room-id-display').innerText = "Código Sala: LOCAL-DEMO";
+            
+            // Inicializar nuestro propio jugador en el estado local
+            gameState.players[myId] = { name: myName, x: 400, y: 350, textureIndex: 0, isSeeker: true, alive: true };
+            updateLobbyUI();
+        }
+
+        function updateLobbyUI() {
+            const listDiv = document.getElementById('player-list');
+            listDiv.innerHTML = `<div>• ${myName} (Tú) ${isHost ? '[Creador]' : ''}</div>`;
+            Object.keys(gameState.players).forEach(id => {
+                if(id !== myId) {
+                    listDiv.innerHTML += `<div>• ${gameState.players[id].name || 'Bot'}</div>`;
+                }
+            });
+        }
+
+        function addBotToLobby() {
+            const botId = "bot_" + Math.floor(Math.random() * 10000);
+            gameState.players[botId] = {
+                name: "MechaBot " + (Object.keys(gameState.players).length),
+                x: 150 + Math.random() * 500, y: 100 + Math.random() * 300,
+                textureIndex: Math.floor(Math.random() * 3),
+                isSeeker: false, alive: true, isBot: true,
+                vx: (Math.random() > 0.5 ? 2 : -2), vy: (Math.random() > 0.5 ? 2 : -2)
+            };
+            updateLobbyUI();
+        }
+
+        function setupRealtimeLobby() {
+            document.getElementById('setup').style.display = 'none';
+            document.getElementById('lobby').style.display = 'block';
+            document.getElementById('room-id-display').innerText = "Código Sala: " + roomCode;
+            
+            const channel = supabase.channel(roomCode, { config: { broadcast: { self: true } } });
+
+            channel.on('broadcast', { event: 'state_update' }, ({ payload }) => {
+                if (!isHost) gameState = payload;
+            }).on('broadcast', { event: 'player_join' }, ({ payload }) => {
+                if(isHost) {
+                    gameState.players[payload.id] = { name: payload.name, x: 200, y: 200, textureIndex: 0, isSeeker: false, alive: true };
+                    sendStateToAll();
+                    updateLobbyUI();
+                }
+            }).subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    isHost = true; 
+                    channel.send({ type: 'broadcast', event: 'player_join', payload: { id: myId, name: myName } });
+                    updateLobbyUI();
+                }
+            });
+        }
+
+        function sendStateToAll() {
+            if(!supabase) return;
+            supabase.channel(roomCode).send({ type: 'broadcast', event: 'state_update', payload: gameState });
+        }
+
+        function startOnlineGame() {
+            document.getElementById('lobby').style.display = 'none';
+            document.getElementById('game-container').style.display = 'block';
+            document.getElementById('touch-controls').style.display = 'flex';
+
+            gameState.players[myId] = { name: myName, x: 400, y: 350, textureIndex: 0, isSeeker: true, alive: true };
+            myLocalData = gameState.players[myId];
+
+            Object.keys(gameState.players).forEach((id) => {
+                if(id !== myId) {
+                    gameState.players[id].isSeeker = false;
+                    gameState.players[id].x = 100 + Math.random() * 600;
+                    gameState.players[id].y = 80 + Math.random() * 300;
+                    gameState.players[id].alive = true;
+                }
+            });
+
+            gameState.timeLeft = 60;
+            gameState.active = true;
+
+            setupInputListeners();
+            setupTouchControls();
+
+            gameInterval = setInterval(gameLoop, 1000 / 60);
+            
+            syncInterval = setInterval(() => {
+                if(isHost && gameState.timeLeft > 0) {
+                    gameState.timeLeft--;
+                    if(gameState.timeLeft <= 0) handleMatchEnd(false);
+                    updateBotsLogic();
+                    sendStateToAll();
+                }
+            }, 1000);
+        }
+
+        function updateBotsLogic() {
+            Object.keys(gameState.players).forEach(id => {
+                let p = gameState.players[id];
+                if(p.isBot && p.alive) {
+                    p.x += p.vx; p.y += p.vy;
+                    if(p.x < 15 || p.x > 785) p.vx *= -1;
+                    if(p.y < 15 || p.y > 435) p.vy *= -1;
+
+                    zones.forEach((z, idx) => {
+                        if(p.x >= z.x && p.x <= z.x + z.width && Math.random() < 0.02) {
+                            p.textureIndex = idx;
+                        }
+                    });
+                }
+            });
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            zones.forEach(z => {
+                ctx.fillStyle = z.color;
+                ctx.fillRect(z.x, 0, z.width, canvas.height);
+                ctx.fillStyle = 'rgba(0,0,0,0.04)';
+                for(let i = z.x; i < z.x + z.width; i += 25) ctx.fillRect(i, 0, 3, canvas.height);
+            });
+
+            let speed = myLocalData.isSeeker ? 4.2 : 3.2;
+            if(myLocalData.alive) {
+                myLocalData.x += inputVector.x * speed;
+                myLocalData.y += inputVector.y * speed;
+                myLocalData.x = Math.max(15, Math.min(canvas.width - 15, myLocalData.x));
+                myLocalData.y = Math.max(15, Math.min(canvas.height - 15, myLocalData.y));
+            }
+
+            if(supabase && !isHost) {
+                supabase.channel(roomCode).send({
+                    type: 'broadcast', event: 'position_sync',
+                    payload: { id: myId, x: myLocalData.x, y: myLocalData.y, textureIndex: myLocalData.textureIndex, alive: myLocalData.alive }
+                });
+            }
+
+            if(supabase && isHost) {
+                supabase.channel(roomCode).on('broadcast', { event: 'position_sync' }, ({ payload }) => {
+                    if(gameState.players[payload.id]) {
+                        gameState.players[payload.id].x = payload.x;
+                        gameState.players[payload.id].y = payload.y;
+                        gameState.players[payload.id].textureIndex = payload.textureIndex;
+                        gameState.players[payload.id].alive = payload.alive;
+                    }
+                });
+            }
+
+            let aliveChameleons = 0;
+            Object.keys(gameState.players).forEach(id => {
+                let p = (id === myId) ? myLocalData : gameState.players[id];
+                if(!p.alive) return;
+                if(!p.isSeeker) aliveChameleons++;
+
+                let currentZoneColor = '#fff';
+                zones.forEach(z => {
+                    if(p.x >= z.x && p.x <= z.x + z.width) currentZoneColor = z.color;
+                });
+
+                let isCamouflaged = (!p.isSeeker && textures[p.textureIndex] === currentZoneColor);
+
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.isSeeker ? 19 : 14, 0, Math.PI * 2);
+                
+                if(p.isSeeker) {
+                    ctx.fillStyle = '#111';
+                    ctx.strokeStyle = '#00ffcc';
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+                } else {
+                    ctx.fillStyle = textures[p.textureIndex];
+                    ctx.strokeStyle = isCamouflaged ? 'transparent' : 'rgba(0,0,0,0.5)';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+                ctx.fill();
+
+                ctx.fillStyle = isCamouflaged ? 'rgba(255,255,255,0.1)' : '#fff';
+                ctx.fillRect(p.x - 4, p.y - 4, 3, 3);
+                ctx.fillRect(p.x + 2, p.y - 4, 3, 3);
+            });
+
+            document.getElementById('time-display').innerText = `Tiempo: ${gameState.timeLeft}s`;
+            document.getElementById('role-display').innerText = `Rol: ${myLocalData.isSeeker ? 'BUSCADOR (Negro)' : 'CAMALEÓN'}`;
+            document.getElementById('score-display').innerText = `Vivos: ${aliveChameleons}`;
+
+            if(isHost && aliveChameleons === 0 && gameState.active) handleMatchEnd(true);
+        }
+
+        function performAction() {
+            if(myLocalData.isSeeker) {
+                Object.keys(gameState.players).forEach(id => {
+                    if(id === myId) return;
+                    let p = gameState.players[id];
+                    if(!p.alive) return;
+                    let dist = Math.hypot(myLocalData.x - p.x, myLocalData.y - p.y);
+                    if(dist < 38) { 
+                        p.alive = false;
+                        if(supabase) sendStateToAll();
+                    }
+                });
+            }
+        }
+
+        function changeCamouflage() {
+            if(!myLocalData.isSeeker) {
+                myLocalData.textureIndex = (myLocalData.textureIndex + 1) % textures.length;
+            }
+        }
+
+        function handleMatchEnd(seekerWon) {
+            gameState.active = false;
+            clearInterval(gameInterval);
+            clearInterval(syncInterval);
+            alert(seekerWon ? "¡El Buscador ha ganado la partida!" : "¡Tiempo agotado! Los camaleones ganan.");
+            leaveGame();
+        }
+
+        function leaveGame() {
+            clearInterval(gameInterval);
+            clearInterval(syncInterval);
+            gameState.players = {};
+            document.getElementById('setup').style.display = 'block';
+            document.getElementById('lobby').style.display = 'none';
+            document.getElementById('game-container').style.display = 'none';
+        }
+
+        function setupInputListeners() {
+            window.addEventListener('keydown', e => {
+                if(e.code === 'ArrowUp' || e.code === 'KeyW') inputVector.y = -1;
+                if(e.code === 'ArrowDown' || e.code === 'KeyS') inputVector.y = 1;
+                if(e.code === 'ArrowLeft' || e.code === 'KeyA') inputVector.x = -1;
+                if(e.code === 'ArrowRight' || e.code === 'KeyD') inputVector.x = 1;
+                if(e.code === 'Space' || e.code === 'ShiftLeft') performAction();
+                if(e.code === 'KeyE') changeCamouflage();
+            });
+            window.addEventListener('keyup', e => {
+                if(['ArrowUp','KeyW','ArrowDown','KeyS'].includes(e.code)) inputVector.y = 0;
+                if(['ArrowLeft','KeyA','ArrowRight','KeyD'].includes(e.code)) inputVector.x = 0;
+            });
+        }
+
+        function setupTouchControls() {
+            const joyArea = document.getElementById('joyArea');
+            const joyStick = document.getElementById('joyStick');
+            let joyCenterX = 55;
+            let joyCenterY = 55;
+
+            function moveJoystick(touchX, touchY) {
+                const rect = joyArea.getBoundingClientRect();
+                let deltaX = (touchX - rect.left) - joyCenterX;
+                let deltaY = (touchY - rect.top) - joyCenterY;
+                let dist = Math.hypot(deltaX, deltaY);
+                const maxDist = 40;
+
+                if (dist > maxDist) {
+                    deltaX = (deltaX / dist) * maxDist;
+                    deltaY = (deltaY / dist) * maxDist;
+                }
+
+                joyStick.style.left = (joyCenterX + deltaX - 22) + 'px';
+                joyStick.style.top = (joyCenterY + deltaY - 22) + 'px';
+
+                inputVector.x = deltaX / maxDist;
+                inputVector.y = deltaY / maxDist;
+            }
+
+            joyArea.addEventListener('touchstart', e => moveJoystick(e.touches[0].clientX, e.touches[0].clientY));
+            joyArea.addEventListener('touchmove', e => { e.preventDefault(); moveJoystick(e.touches[0].clientX, e.touches[0].clientY); });
+            joyArea.addEventListener('touchend', () => {
+                joyStick.style.left = '32px'; joyStick.style.top = '32px';
+                inputVector.x = 0; inputVector.y = 0;
+            });
+
+            document.getElementById('btn-action').addEventListener('touchstart', e => { e.preventDefault(); performAction(); });
+            document.getElementById('btn-camo').addEventListener('touchstart', e => { e.preventDefault(); changeCamouflage(); });
+        }
+    </script>
+</body>
+</html>
